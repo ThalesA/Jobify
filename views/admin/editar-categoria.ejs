@@ -1,0 +1,16 @@
+
+        <%- include('header') %> <!-- Inclui uma uma página parcial(header) para dentro da página atual -->
+        <h2>
+            Editar categoria:
+            <a href="/admin/categorias">Categorias</a>
+        </h2>
+        <div>
+            <form method="POST">
+                <label>Título Categoria:</label>
+                <input type="text" name="categoria" value="<%= categorias.categoria %>">
+                <br>
+                <button>Salvar Categoria</button>
+                <br>
+            </form>
+        </div>
+        <%- include('footer') %> <!-- Inclui uma uma página parcial(footer) para dentro da página atual -->

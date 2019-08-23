@@ -1,0 +1,166 @@
+//Inicializando módulos de terceiros. Precisamos da dependencia "Express" para rodar a aplicação
+const express = require('express')      //Express trabalha com request/response
+const app = express()       //Cria uma nova aplicação Express
+const bodyParser = require('body-parser')
+
+const path = require('path')
+
+//Criandp uma nova conexão com o banco de dados sqlite
+const sqlite = require('sqlite')
+const dbConnection = sqlite.open(path.resolve(__dirname, 'banco.sqlite'), { Promise })
+
+//configuração necessaria para colocar a aplicação no ar. Recebe um valor da variavel de ambiente do zeit.co
+const port = process.env.PORT || 3000
+
+//Inicializando módulos de terceiros. Precisamos da dependencia "EJS" para rodar a aplicação
+app.set('view engine', 'ejs')       //EJS trabalha com templates de HTML
+app.use(express.static('public'))   //Se não achar nada depois da barra "/", pega o que tiver na pasta public
+app.use(bodyParser.urlencoded({extended: true}))
+
+//Toda vez que bater na barra(passando nada) "/" chama a função (response). O get suporta funcao await
+app.get('/', async(request, response) => {
+    const db = await dbConnection
+    const categoriasDb = await db.all('select * from categorias;')    //pega todas as linhas da tabela categorias no banco de dados
+    const vagas = await db.all('select * from vagas;')
+    const categorias = categoriasDb.map(cat => {
+        return{
+            ...cat,     //operador espalhar(...), espalha dados de uma categoria dentro de um vetor, copiando todos os campos de categorias e botando no objeto
+            vagas: vagas.filter(vaga => vaga.categoria === cat.id)      //cria um novo item e anda no vetor filtrando por esse item
+        }
+    })
+    response.render('home', {   //passa essas categorias la pro arquivo ejs
+        categorias
+    })
+})
+
+//Toda vez que bater na barra vaga(passando vaga) "/vaga" chama a função (response)
+app.get('/vaga/:id', async(request, response) => {      //tem que ser assincrono porque vamos trazer dados do banco de dados
+    const db = await dbConnection
+    const vaga = await db.get('select * from vagas where id = '+ request.params.id)      //usamos get pra pegar apenas 1, caso contrario seria all
+    response.render('vaga', {
+        vaga
+    })
+})
+
+//funcao get para a pagina de administrador
+app.get('/admin', (request, response) => {
+    response.render('admin/home')
+})
+
+//funcao get para a pagina de gerenciamento de vagas
+app.get('/admin/vagas', async(request, response) => {       //tem que ser assincrono porque vamos trazer dados do banco de dados
+    const db = await dbConnection
+    const vagas = await db.all('select * from vagas;')      //carregar todas as vagas do banco
+    response.render('admin/vagas', { vagas })
+})
+
+//funcao get para a pagina de gerenciamento de categorias
+app.get('/admin/categorias', async(request, response) => {       //tem que ser assincrono porque vamos trazer dados do banco de dados
+    const db = await dbConnection
+    const categorias = await db.all('select * from categorias;')      //carregar todas as categorias do banco
+    response.render('admin/categorias', { categorias })
+})
+
+//funcao get para exlcuir vagas
+app.get('/admin/vagas/delete/:id', async(request, response) => {
+    const db = await dbConnection
+    await db.run('delete from vagas where id = ' + request.params.id)
+    response.redirect('/admin/vagas')
+})
+
+//funcao get para exlcuir categorias
+app.get('/admin/categorias/delete/:id', async(request, response) => {
+    const db = await dbConnection
+    await db.run('delete from categorias where id = ' + request.params.id)
+    response.redirect('/admin/categorias')
+})
+
+//funcao get para criar nova vaga
+app.get('/admin/vagas/nova', async(request, response) => {
+    const db = await dbConnection
+    const categorias = await db.all('select * from categorias')
+    response.render('admin/nova-vaga', { categorias })
+    //const db = await dbConnection
+    //await db.run('delete from vagas where id = ' + request.params.id)
+    //response.redirect('/admin/vagas')
+})
+app.post('/admin/vagas/nova', async(request, response) => {
+    const {titulo, descricao, categoria} = request.body
+    const db = await dbConnection
+    await db.run(`insert into vagas(categoria, titulo, descricao) values('${categoria}', '${titulo}', '${descricao}')`)
+    response.redirect('/admin/vagas')
+})
+
+//funcao get para criar nova categoria
+app.get('/admin/categorias/nova', async(request, response) => {
+    response.render('admin/nova-categoria')
+})
+app.post('/admin/categorias/nova', async(request, response) => {
+    const {categoria} = request.body
+    const db = await dbConnection
+    await db.run(`insert into categorias(categoria) values('${categoria}')`)
+    response.redirect('/admin/categorias')
+})
+
+//funcao get para editar nova vaga
+app.get('/admin/vagas/editar/:id', async(request, response) => {
+    const db = await dbConnection
+    const categorias = await db.all('select * from categorias')
+    const vaga = await db.get('select * from vagas where id = ' + request.params.id)
+    response.render('admin/editar-vaga', { categorias , vaga })
+    //const db = await dbConnection
+    //await db.run('delete from vagas where id = ' + request.params.id)
+    //response.redirect('/admin/vagas')
+})
+app.post('/admin/vagas/editar/:id', async(request, response) => {
+    const {titulo, descricao, categoria} = request.body
+    const {id} = request.params
+    const db = await dbConnection
+    await db.run(`update vagas set categoria = ${categoria}, titulo = '${titulo}' , descricao = '${descricao}' where id = ${id}`)
+    response.redirect('/admin/vagas')
+})
+
+//funcao get para editar nova categoria
+app.get('/admin/categorias/editar/:id', async(request, response) => {
+    const db = await dbConnection
+    const categorias = await db.get('select * from categorias where id = ' + request.params.id)
+    response.render('admin/editar-categoria', { categorias })
+})
+app.post('/admin/categorias/editar/:id', async(request, response) => {
+    const {categoria} = request.body
+    const {id} = request.params
+    const db = await dbConnection
+    await db.run(`update categorias set categoria = '${categoria}' where id = ${id}`)
+    response.redirect('/admin/categorias')
+})
+
+//criando a tabela no banco de dados
+const init = async() => {
+    const db = await dbConnection   //espera a conexcao ficar pronta
+    //await db.run(`drop table categorias`)
+    //await db.run(`drop table vagas`)
+    await db.run('create table if not exists categorias (id INTEGER PRIMARY KEY, categoria TEXT);')     //cria tabela categorias no banco de dados
+    //const categoria = 'Engineering Team'
+    await db.run('create table if not exists vagas (id INTEGER PRIMARY KEY, categoria INTEGER, titulo TEXT, descricao TEXT);')     //cria tabela vagas no banco de dados
+    //const categoria = 'Marketing Team'
+    //await db.run(`insert into categorias(categoria) values('${categoria}')`)    //insere uma linha na tabela do bd, comado no formato template string
+    //await db.run(`delete from categorias where id = 2`)
+    //const vaga = 'Fullstack Develloper (Remoto)'
+    //const descricao = 'Vaga para fullstack developer que fez o FullStack Lab no DevPleno'
+    //const vaga = 'Digital Marketing (San Francisco)'
+    //const descricao = 'Vaga para fullstack developer que fez o FullStack Lab no DevPleno'
+    //const vaga = 'Social Media (San Francisco)'
+    //const descricao = 'Vaga para fullstack developer que fez o FullStack Lab no DevPleno'
+    //await db.run(`insert into vagas(categoria, titulo, descricao) values(2, '${vaga}', '${descricao}')`)    //insere uma linha na tabela do bd comado no formato template string
+    //await db.run(`delete from vagas where id = 2`)
+}
+init()
+
+//Abre na porta 3000 e verifica se tem algum erro. Se não houverem erros, significa que a requisição foi executada com sucesso
+app.listen(port, (erro) => {
+    if(erro){
+        console.log('Não foi possível iniciar o servidor Jobify.')
+    }else{
+        console.log('Servidor do Jobify rodando...')
+    }
+})
